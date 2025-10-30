@@ -4,6 +4,10 @@ on:
   push:
     branches: [main, qa]
 
+defaults:
+  run:
+    working-directory: dashboard-service
+
 jobs:
   deploy:
     name: Deploy dashboard weeklyActivity
