@@ -4,10 +4,6 @@ on:
   push:
     branches: [main, qa]
 
-defaults:
-  run:
-    working-directory: dashboard-service
-
 jobs:
   deploy:
     name: Deploy dashboard weeklyActivity
@@ -23,16 +19,45 @@ jobs:
         with:
           node-version: '20'
 
-      - name: 📦 Install dependencies
-        run: npm ci
+      # SUBDIR
+      - name: 📦 Install dependencies (subdir)
+        if: ${{ hashFiles('dashboard-service/package.json') != '' }}
+        working-directory: dashboard-service
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --omit=dev
+          else
+            npm install --omit=dev
+          fi
 
-      - name: 📦 Package Lambda (weeklyActivity)
+      - name: 📦 Package Lambda (weeklyActivity) (subdir)
+        if: ${{ hashFiles('dashboard-service/package.json') != '' }}
+        working-directory: dashboard-service
         run: |
           zip -r dashboard-weeklyActivity.zip \
             src/ \
             node_modules/ \
             package.json \
-            package-lock.json
+            package-lock.json || true
+
+      # ROOT
+      - name: 📦 Install dependencies (root)
+        if: ${{ hashFiles('dashboard-service/package.json') == '' && hashFiles('package.json') != '' }}
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --omit=dev
+          else
+            npm install --omit=dev
+          fi
+
+      - name: 📦 Package Lambda (weeklyActivity) (root)
+        if: ${{ hashFiles('dashboard-service/package.json') == '' && hashFiles('package.json') != '' }}
+        run: |
+          zip -r dashboard-weeklyActivity.zip \
+            src/ \
+            node_modules/ \
+            package.json \
+            package-lock.json || true
 
       - name: 🔐 Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
@@ -41,13 +66,27 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      - name: 🚀 Deploy dashboard-weeklyActivity
+      # DEPLOY
+      - name: 🚀 Deploy dashboard-weeklyActivity (subdir)
+        if: ${{ hashFiles('dashboard-service/package.json') != '' }}
+        working-directory: dashboard-service
         run: |
-          STAGE=${{ github.ref == 'refs/heads/main' && 'dev' || github.ref == 'refs/heads/qa' && 'qa' }}
+          STAGE=${{ github.ref == 'refs/heads/main' && 'dev' || 'qa' }}
           aws lambda update-function-configuration \
             --function-name dashboard-service-$STAGE-weeklyActivity \
             --environment "Variables={STAGE=\"$STAGE\",COURSES_TABLE_NAME=\"novalearn-courses-$STAGE\",ALLOWED_ORIGINS=\"*\"}"
+          aws lambda update-function-code \
+            --function-name dashboard-service-$STAGE-weeklyActivity \
+            --zip-file fileb://dashboard-weeklyActivity.zip \
+            --publish
 
+      - name: 🚀 Deploy dashboard-weeklyActivity (root)
+        if: ${{ hashFiles('dashboard-service/package.json') == '' && hashFiles('package.json') != '' }}
+        run: |
+          STAGE=${{ github.ref == 'refs/heads/main' && 'dev' || 'qa' }}
+          aws lambda update-function-configuration \
+            --function-name dashboard-service-$STAGE-weeklyActivity \
+            --environment "Variables={STAGE=\"$STAGE\",COURSES_TABLE_NAME=\"novalearn-courses-$STAGE\",ALLOWED_ORIGINS=\"*\"}"
           aws lambda update-function-code \
             --function-name dashboard-service-$STAGE-weeklyActivity \
             --zip-file fileb://dashboard-weeklyActivity.zip \
@@ -55,7 +94,7 @@ jobs:
 
       - name: ✅ Confirm Success
         if: success()
-        run: echo "✅ dashboard-service-$STAGE-weeklyActivity deployed!"
+        run: echo "✅ dashboard-service deployed (weeklyActivity)!"
       - name: ❌ Show Failure
         if: failure()
         run: echo "❌ Deployment failed"

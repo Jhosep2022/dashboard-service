@@ -4,11 +4,6 @@ on:
   push:
     branches: [main, qa]
 
-defaults:
-  run:
-    working-directory: dashboard-service
-
-
 jobs:
   deploy:
     name: Deploy dashboard streak
@@ -22,18 +17,47 @@ jobs:
       - name: 🏗️ Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '20'   # ← Node 20
+          node-version: '20'
 
-      - name: 📦 Install dependencies
-        run: npm ci
+      # SUBDIR
+      - name: 📦 Install dependencies (subdir)
+        if: ${{ hashFiles('dashboard-service/package.json') != '' }}
+        working-directory: dashboard-service
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --omit=dev
+          else
+            npm install --omit=dev
+          fi
 
-      - name: 📦 Package Lambda (streak)
+      - name: 📦 Package Lambda (streak) (subdir)
+        if: ${{ hashFiles('dashboard-service/package.json') != '' }}
+        working-directory: dashboard-service
         run: |
           zip -r dashboard-streak.zip \
             src/ \
             node_modules/ \
             package.json \
-            package-lock.json
+            package-lock.json || true
+
+      # ROOT
+      - name: 📦 Install dependencies (root)
+        if: ${{ hashFiles('dashboard-service/package.json') == '' && hashFiles('package.json') != '' }}
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --omit=dev
+          else
+            npm install --omit=dev
+          fi
+
+      - name: 📦 Package Lambda (streak) (root)
+        if: ${{ hashFiles('dashboard-service/package.json') == '' && hashFiles('package.json') != '' }}
+        run: |
+          zip -r dashboard-streak.zip \
+            src/ \
+            node_modules/ \
+            package.json \
+            package-lock.json || true
 
       - name: 🔐 Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
@@ -42,13 +66,27 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      - name: 🚀 Deploy dashboard-streak
+      # DEPLOY
+      - name: 🚀 Deploy dashboard-streak (subdir)
+        if: ${{ hashFiles('dashboard-service/package.json') != '' }}
+        working-directory: dashboard-service
         run: |
-          STAGE=${{ github.ref == 'refs/heads/main' && 'dev' || github.ref == 'refs/heads/qa' && 'qa' }}
+          STAGE=${{ github.ref == 'refs/heads/main' && 'dev' || 'qa' }}
           aws lambda update-function-configuration \
             --function-name dashboard-service-$STAGE-streak \
             --environment "Variables={STAGE=\"$STAGE\",COURSES_TABLE_NAME=\"novalearn-courses-$STAGE\",ALLOWED_ORIGINS=\"*\"}"
+          aws lambda update-function-code \
+            --function-name dashboard-service-$STAGE-streak \
+            --zip-file fileb://dashboard-streak.zip \
+            --publish
 
+      - name: 🚀 Deploy dashboard-streak (root)
+        if: ${{ hashFiles('dashboard-service/package.json') == '' && hashFiles('package.json') != '' }}
+        run: |
+          STAGE=${{ github.ref == 'refs/heads/main' && 'dev' || 'qa' }}
+          aws lambda update-function-configuration \
+            --function-name dashboard-service-$STAGE-streak \
+            --environment "Variables={STAGE=\"$STAGE\",COURSES_TABLE_NAME=\"novalearn-courses-$STAGE\",ALLOWED_ORIGINS=\"*\"}"
           aws lambda update-function-code \
             --function-name dashboard-service-$STAGE-streak \
             --zip-file fileb://dashboard-streak.zip \
@@ -56,7 +94,7 @@ jobs:
 
       - name: ✅ Confirm Success
         if: success()
-        run: echo "✅ dashboard-service-$STAGE-streak deployed!"
+        run: echo "✅ dashboard-service deployed (streak)!"
       - name: ❌ Show Failure
         if: failure()
         run: echo "❌ Deployment failed"
