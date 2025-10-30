@@ -1,0 +1,57 @@
+name: Deploy dashboard-summary Lambda to AWS
+
+on:
+  push:
+    branches: [main, qa]
+
+jobs:
+  deploy:
+    name: Deploy dashboard summary
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref == 'refs/heads/main' && 'dev' || github.ref == 'refs/heads/qa' && 'qa' }}
+
+    steps:
+      - name: 🔄 Checkout code
+        uses: actions/checkout@v3
+
+      - name: 🏗️ Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 📦 Package Lambda (summary)
+        run: |
+          zip -r dashboard-summary.zip \
+            src/ \
+            node_modules/ \
+            package.json \
+            package-lock.json
+
+      - name: 🔐 Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: 🚀 Deploy dashboard-summary
+        run: |
+          STAGE=${{ github.ref == 'refs/heads/main' && 'dev' || github.ref == 'refs/heads/qa' && 'qa' }}
+          aws lambda update-function-configuration \
+            --function-name dashboard-service-$STAGE-summary \
+            --environment "Variables={STAGE=\"$STAGE\",COURSES_TABLE_NAME=\"novalearn-courses-$STAGE\",ALLOWED_ORIGINS=\"*\"}"
+
+          aws lambda update-function-code \
+            --function-name dashboard-service-$STAGE-summary \
+            --zip-file fileb://dashboard-summary.zip \
+            --publish
+
+      - name: ✅ Confirm Success
+        if: success()
+        run: echo "✅ dashboard-service-$STAGE-summary deployed!"
+      - name: ❌ Show Failure
+        if: failure()
+        run: echo "❌ Deployment failed"
