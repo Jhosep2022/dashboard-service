@@ -1,4 +1,4 @@
-import { QueryCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
+import { QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { doc } from '../../core/ddb.js';
 import { env } from '../../core/env.js';
 
