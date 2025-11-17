@@ -74,7 +74,16 @@ jobs:
           STAGE=${{ github.ref == 'refs/heads/main' && 'dev' || 'qa' }}
           aws lambda update-function-configuration \
             --function-name dashboard-service-$STAGE-weeklyActivity \
-            --environment "Variables={STAGE=\"$STAGE\",COURSES_TABLE_NAME=\"novalearn-courses-$STAGE\",ALLOWED_ORIGINS=\"*\"}"
+            --environment "Variables={\
+                STAGE=\"$STAGE\",\
+                COURSES_TABLE_NAME=\"novalearn-courses-$STAGE\",\
+                LESSONS_TABLE_NAME=\"novalearn-lessons-$STAGE\",\
+                MODULES_TABLE_NAME=\"novalearn-modules-$STAGE\",\
+                EXAMS_TABLE_NAME=\"novalearn-exams-$STAGE\",\
+                RESOURCES_TABLE_NAME=\"novalearn-resources-$STAGE\",\
+                QUIZZES_TABLE_NAME=\"novalearn-quizzes-$STAGE\",\
+                ALLOWED_ORIGINS=\"*\"\
+                }"
           aws lambda update-function-code \
             --function-name dashboard-service-$STAGE-weeklyActivity \
             --zip-file fileb://dashboard-weeklyActivity.zip \
@@ -86,7 +95,16 @@ jobs:
           STAGE=${{ github.ref == 'refs/heads/main' && 'dev' || 'qa' }}
           aws lambda update-function-configuration \
             --function-name dashboard-service-$STAGE-weeklyActivity \
-            --environment "Variables={STAGE=\"$STAGE\",COURSES_TABLE_NAME=\"novalearn-courses-$STAGE\",ALLOWED_ORIGINS=\"*\"}"
+            --environment "Variables={\
+                STAGE=\"$STAGE\",\
+                COURSES_TABLE_NAME=\"novalearn-courses-$STAGE\",\
+                LESSONS_TABLE_NAME=\"novalearn-lessons-$STAGE\",\
+                MODULES_TABLE_NAME=\"novalearn-modules-$STAGE\",\
+                EXAMS_TABLE_NAME=\"novalearn-exams-$STAGE\",\
+                RESOURCES_TABLE_NAME=\"novalearn-resources-$STAGE\",\
+                QUIZZES_TABLE_NAME=\"novalearn-quizzes-$STAGE\",\
+                ALLOWED_ORIGINS=\"*\"\
+                }"
           aws lambda update-function-code \
             --function-name dashboard-service-$STAGE-weeklyActivity \
             --zip-file fileb://dashboard-weeklyActivity.zip \
