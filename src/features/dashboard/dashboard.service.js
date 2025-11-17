@@ -6,26 +6,44 @@ import {
 } from './dashboard.repo.js';
 
 export async function svcSummary(userId) {
-  const enrolls = await queryEnrollments(userId);
+  const raw = await queryEnrollments(userId);
 
-  const active = enrolls.filter((e) => (e.status || 'active') === 'active');
-  const completed = enrolls.filter((e) => e.status === 'completed');
+  const enrolls = (raw || []).map((e) => {
+    const courseId = String(e.PK || '')
+      .replace('COURSE#', '');
+    return { ...e, courseId };
+  });
+
+  const active = enrolls.filter(
+    (e) => (e.status || 'active') === 'active'
+  );
+  const completed = enrolls.filter(
+    (e) => e.status === 'completed'
+  );
+
   const avg = enrolls.length
     ? Math.round(
-        enrolls.reduce((s, e) => s + (e.progressPercent || 0), 0) / enrolls.length
+        enrolls.reduce(
+          (s, e) => s + (e.progressPercent || 0),
+          0
+        ) / enrolls.length
       )
     : 0;
 
   const activeCourse =
-    active.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))[0] ||
+    active.sort((a, b) =>
+      (b.updatedAt || '').localeCompare(
+        a.updatedAt || ''
+      )
+    )[0] ||
     active[0] ||
     null;
 
   let nextLessons = [];
-  if (activeCourse) {
+  if (activeCourse && activeCourse.courseId) {
     nextLessons = await computeNextLessons(
       userId,
-      activeCourse.SK.replace('COURSE#', ''),
+      activeCourse.courseId,
       4
     );
   }
@@ -35,41 +53,58 @@ export async function svcSummary(userId) {
       coursesActive: active.length,
       coursesCompleted: completed.length,
       avgProgressPercent: avg,
-      totalLessons: active.concat(completed).reduce((s, e) => s + (e.totalLessons || 0), 0)
+      totalLessons: active
+        .concat(completed)
+        .reduce(
+          (s, e) => s + (e.totalLessons || 0),
+          0
+        ),
     },
     activeCourse: activeCourse
       ? {
-          id: activeCourse.SK.replace('COURSE#', ''),
+          id: activeCourse.courseId,
           title: activeCourse.title,
-          progressPercent: activeCourse.progressPercent || 0,
-          tags: activeCourse.tags || []
+          progressPercent:
+            activeCourse.progressPercent || 0,
+          tags: activeCourse.tags || [],
         }
       : null,
     coursesSummary: enrolls.map((e) => ({
-      id: e.SK.replace('COURSE#', ''),
+      id: e.courseId,
       title: e.title,
       progressPercent: e.progressPercent || 0,
       lessonsTotal: e.totalLessons || 0,
-      status: e.status || 'active'
+      status: e.status || 'active',
     })),
-    nextLessons
+    nextLessons,
   };
 }
 
-async function computeNextLessons(userId, courseId, limit = 4) {
+async function computeNextLessons(
+  userId,
+  courseId,
+  limit = 4
+) {
   const [tree, progress] = await Promise.all([
     queryCoursePartition(userId, courseId),
-    queryCourseProgressItems(userId, courseId)
+    queryCourseProgressItems(userId, courseId),
   ]);
 
   const completed = new Set(
-    progress
+    (progress || [])
       .filter((p) => p.status === 'completed')
-      .map((p) => String(p.SK).replace('PROGRESS#LESSON#', ''))
+      .map((p) =>
+        String(p.SK).replace(
+          'PROGRESS#LESSON#',
+          ''
+        )
+      )
   );
 
-  const lessons = tree
-    .filter((it) => String(it.SK).startsWith('LESSON#'))
+  const lessons = (tree || [])
+    .filter((it) =>
+      String(it.SK).startsWith('LESSON#')
+    )
     .map((it) => {
       const parts = String(it.SK).split('#');
       return {
@@ -78,13 +113,18 @@ async function computeNextLessons(userId, courseId, limit = 4) {
         modulePos: Number(parts[1]),
         order: Number(parts[2]),
         title: it.title,
-        durationMinutes: it.durationMinutes || 0,
-        completed: completed.has(parts[3])
+        durationMinutes:
+          it.durationMinutes || 0,
+        completed: completed.has(parts[3]),
       };
     })
     .filter((l) => !l.completed)
-    .sort((a, b) => a.modulePos - b.modulePos || a.order - b.order)
-  .slice(0, limit);
+    .sort(
+      (a, b) =>
+        a.modulePos - b.modulePos ||
+        a.order - b.order
+    )
+    .slice(0, limit);
 
   return lessons;
 }

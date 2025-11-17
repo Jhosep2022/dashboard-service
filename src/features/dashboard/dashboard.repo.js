@@ -9,32 +9,35 @@ const ACTIVITY_TABLE = LESSONS_TABLE;
 /** Enrolments del usuario (todas las rutas personales) */
 export async function queryEnrollments(userId) {
   const r = await doc.send(
-    new QueryCommand({
+    new ScanCommand({
       TableName: COURSES_TABLE,
-      IndexName: 'GSI2',
-      KeyConditionExpression: 'GSI2PK = :pk AND begins_with(GSI2SK, :sk)',
+      // usamos los mismos atributos que alimentan la GSI2,
+      // pero sin necesidad de que la GSI exista
+      FilterExpression:
+        'GSI2PK = :pk AND begins_with(GSI2SK, :sk)',
       ExpressionAttributeValues: {
         ':pk': `USER#${userId}`,
-        ':sk': 'UPDATED#'
+        ':sk': 'UPDATED#',
       },
-      ScanIndexForward: false
     })
   );
   return r.Items || [];
 }
+
 
 /** Muestra el curso personal completo (para “próximas lecciones”) */
 export async function queryCoursePartition(userId, courseId) {
   const r = await doc.send(
     new QueryCommand({
       TableName: LESSONS_TABLE,
-      IndexName: 'GSI1',
-      KeyConditionExpression: 'GSI1PK = :pk AND begins_with(GSI1SK, :sk)',
+      IndexName: 'byCourse', // nombre real del índice en novalearn-lessons-dev
+      KeyConditionExpression:
+        'GSI1PK = :pk AND begins_with(GSI1SK, :sk)',
       ExpressionAttributeValues: {
         ':pk': `COURSE#${courseId}`,
-        ':sk': 'M#'
+        ':sk': 'M#',
       },
-      ScanIndexForward: true
+      ScanIndexForward: true,
     })
   );
   return r.Items || [];
@@ -45,12 +48,13 @@ export async function queryCourseProgressItems(userId, courseId) {
   const r = await doc.send(
     new QueryCommand({
       TableName: LESSONS_TABLE,
-      KeyConditionExpression: 'PK = :pk AND begins_with(SK, :p)',
+      KeyConditionExpression:
+        'PK = :pk AND begins_with(SK, :p)',
       ExpressionAttributeValues: {
         ':pk': `COURSE#${courseId}`,
-        ':p': 'PROGRESS#LESSON#'
+        ':p': 'PROGRESS#LESSON#',
       },
-      ScanIndexForward: true
+      ScanIndexForward: true,
     })
   );
   return r.Items || [];
@@ -64,13 +68,14 @@ export async function queryActivityRange(userId, fromISO, toISO) {
   const r = await doc.send(
     new QueryCommand({
       TableName: ACTIVITY_TABLE,
-      KeyConditionExpression: 'PK = :pk AND SK BETWEEN :from AND :to',
+      KeyConditionExpression:
+        'PK = :pk AND SK BETWEEN :from AND :to',
       ExpressionAttributeValues: {
-        ':pk': `UA#${userId}`,  // coincide con PK usado en setLessonProgress/setLessonNotes
+        ':pk': `UA#${userId}`,
         ':from': fromKey,
-        ':to': toKey
+        ':to': toKey,
       },
-      ScanIndexForward: true
+      ScanIndexForward: true,
     })
   );
   return r.Items || [];
