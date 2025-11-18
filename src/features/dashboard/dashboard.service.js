@@ -8,12 +8,29 @@ import {
 export async function svcSummary(userId) {
   const raw = await queryEnrollments(userId);
 
-  const enrolls = (raw || []).map((e) => {
-    const courseId = String(e.PK || '')
-      .replace('COURSE#', '');
+  // 1) Normalizamos courseId
+  const enrollsBase = (raw || []).map((e) => {
+    const courseId = String(e.PK || '').replace('COURSE#', '');
     return { ...e, courseId };
   });
 
+  // 2) Enriquecemos con progreso real desde novalearn-lessons-*
+  const enrolls = await Promise.all(
+    enrollsBase.map(async (e) => {
+      if (!e.courseId) return e;
+
+      const prog = await computeCourseProgressDashboard(userId, e.courseId);
+
+      return {
+        ...e,
+        progressPercent: prog.progressPercent,
+        totalLessons: prog.totalLessons,
+        completedLessons: prog.completedLessons,
+      };
+    })
+  );
+
+  // 3) KPIs usando los enrolls enriquecidos
   const active = enrolls.filter(
     (e) => (e.status || 'active') === 'active'
   );
@@ -32,9 +49,7 @@ export async function svcSummary(userId) {
 
   const activeCourse =
     active.sort((a, b) =>
-      (b.updatedAt || '').localeCompare(
-        a.updatedAt || ''
-      )
+      (b.updatedAt || '').localeCompare(a.updatedAt || '')
     )[0] ||
     active[0] ||
     null;
@@ -64,8 +79,7 @@ export async function svcSummary(userId) {
       ? {
           id: activeCourse.courseId,
           title: activeCourse.title,
-          progressPercent:
-            activeCourse.progressPercent || 0,
+          progressPercent: activeCourse.progressPercent || 0,
           tags: activeCourse.tags || [],
         }
       : null,
@@ -144,10 +158,18 @@ export async function svcWeeklyActivity(userId, days = 7, now = new Date()) {
     buckets.set(toISO(d), 0);
   }
   for (const it of items) {
-    const sk = String(it.SK); 
-    const d = sk.slice(4, 12);
-    const iso = `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`;
-    buckets.set(iso, (buckets.get(iso) || 0) + (it.minutes || 0));
+    const sk = String(it.SK);
+    const datePartRaw = sk.split('#')[1] || '';
+    const datePart = datePartRaw.slice(0, 10);
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+      console.warn('[WEEKLY][BAD_DATE]', { sk, datePartRaw });
+      continue;
+    }
+    buckets.set(
+      datePart,
+      (buckets.get(datePart) || 0) + (it.minutes || 0)
+    );
   }
 
   return {
@@ -165,11 +187,12 @@ export async function svcStreak(userId, maxWindowDays = 30, now = new Date()) {
 
   const days = new Set(
     items.map((it) => {
-      const d = String(it.SK).slice(4, 12);
-      return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`;
+      const sk = String(it.SK);
+      const raw = sk.split('#')[1] || '';
+      const iso = raw.slice(0, 10);    
+      return iso;
     })
   );
-
   let streak = 0;
   for (let d = new Date(to); d >= from; d.setUTCDate(d.getUTCDate() - 1)) {
     const iso = toISO(d);
@@ -184,4 +207,40 @@ function toISO(d) {
   const m = String(d.getUTCMonth() + 1).padStart(2, '0');
   const day = String(d.getUTCDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
+}
+
+
+async function computeCourseProgressDashboard(userId, courseId) {
+  const [tree, progressItems] = await Promise.all([
+    queryCoursePartition(userId, courseId),
+    queryCourseProgressItems(userId, courseId),
+  ]);
+
+  const lessons = (tree || []).filter((it) =>
+    String(it.SK || '').startsWith('LESSON#')
+  );
+  const totalLessons = lessons.length;
+
+  const completedIds = new Set(
+    (progressItems || [])
+      .filter((p) => (p.status || p['status']) === 'completed')
+      .map((p) =>
+        String(p.SK).replace('PROGRESS#LESSON#', '')
+      )
+  );
+
+  const completedLessons = completedIds.size;
+
+  let pct =
+    totalLessons > 0
+      ? Math.round((completedLessons / totalLessons) * 10000) / 100
+      : 0;
+
+  pct = Math.max(0, Math.min(100, pct));
+
+  return {
+    progressPercent: pct,
+    totalLessons,
+    completedLessons,
+  };
 }

@@ -11,13 +11,12 @@ export async function queryEnrollments(userId) {
   const r = await doc.send(
     new ScanCommand({
       TableName: COURSES_TABLE,
-      // usamos los mismos atributos que alimentan la GSI2,
-      // pero sin necesidad de que la GSI exista
       FilterExpression:
-        'GSI2PK = :pk AND begins_with(GSI2SK, :sk)',
+        'GSI2PK = :pk AND (begins_with(GSI2SK, :updated) OR begins_with(GSI2SK, :status))',
       ExpressionAttributeValues: {
         ':pk': `USER#${userId}`,
-        ':sk': 'UPDATED#',
+        ':updated': 'UPDATED#',
+        ':status': 'STATUS#',
       },
     })
   );
